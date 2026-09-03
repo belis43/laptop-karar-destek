@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>LaptopAI — AHP Tabanlı Öneri Sistemi</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d0f14;
+    --surface: #161921;
+    --surface2: #1e222d;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #eef0f6;
+    --muted: #8a90a0;
+    --accent: #6c6eff;
+    --accent2: #a78bfa;
+    --gold: #f5c542;
+    --green: #34d399;
+    --red: #f87171;
+    --card-r: 14px;
+    --font-head: 'Syne', sans-serif;
+    --font-body: 'DM Sans', sans-serif;
+  }
+  html { font-family: var(--font-body); background: var(--bg); color: var(--text); font-size: 15px; min-height: 100vh; }
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* LAYOUT */
+  .app { display: flex; height: 100vh; overflow: hidden; }
+  .sidebar { width: 300px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* TOPBAR */
+  .topbar { padding: 18px 28px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .logo { font-family: var(--font-head); font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent); }
+  .badge-count { background: var(--surface2); border: 1px solid var(--border2); border-radius: 20px; padding: 4px 12px; font-size: 13px; color: var(--muted); }
+
+  /* SIDEBAR INTERNALS */
+  .sidebar-scroll { flex: 1; overflow-y: auto; padding: 0 0 16px 0; }
+  .sidebar-scroll::-webkit-scrollbar { width: 4px; }
+  .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+  .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+  .sidebar-section { padding: 16px 18px 0; }
+  .sidebar-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 10px; }
+
+  /* SEARCH */
+  .search-wrap { position: relative; }
+  .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; pointer-events: none; }
+  .search-input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px 8px 32px; font-family: var(--font-body); font-size: 13px; color: var(--text); outline: none; transition: border-color 0.2s; }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--muted); }
+
+  /* PRICE SLIDER */
+  .price-range { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+  .price-range input[type=range] { flex: 1; -webkit-appearance: none; height: 3px; background: linear-gradient(to right, var(--accent) var(--pct,50%), var(--border2) var(--pct,50%)); border-radius: 2px; cursor: pointer; }
+  .price-range input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); cursor: pointer; }
+  .price-val { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 70px; text-align: right; }
+
+  /* CHIP GROUPS */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border2); font-size: 12px; color: var(--muted); cursor: pointer; transition: all 0.15s; background: transparent; font-family: var(--font-body); }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* TOGGLE */
+  .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+  .toggle-label { font-size: 13px; color: var(--muted); }
+  .toggle { position: relative; width: 36px; height: 20px; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider { position: absolute; inset: 0; background: var(--surface2); border: 1px solid var(--border2); border-radius: 20px; cursor: pointer; transition: 0.2s; }
+  .toggle-slider::before { content: ''; position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; background: var(--muted); border-radius: 50%; transition: 0.2s; }
+  .toggle input:checked + .toggle-slider { background: var(--accent); border-color: var(--accent); }
+  .toggle input:checked + .toggle-slider::before { transform: translateX(16px); background: #fff; }
+
+  /* AHP SECTION */
+  .ahp-panel { background: var(--surface2); border-top: 1px solid var(--border); padding: 16px 18px; }
+  .ahp-title { font-family: var(--font-head); font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .ahp-row { margin-bottom: 10px; }
+  .ahp-row-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .ahp-row-name { font-size: 12px; color: var(--text); }
+  .ahp-row-val { font-size: 12px; font-weight: 600; color: var(--accent); min-width: 12px; text-align: right; }
+  .ahp-slider { width: 100%; -webkit-appearance: none; height: 3px; background: var(--border2); border-radius: 2px; cursor: pointer; outline: none; }
+  .ahp-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); cursor: pointer; }
+  .ahp-weight { font-size: 10px; color: var(--muted); text-align: right; margin-top: 2px; }
+
+  /* MAIN CONTENT */
+  .content { flex: 1; overflow-y: auto; padding: 24px 28px; }
+  .content::-webkit-scrollbar { width: 5px; }
+  .content::-webkit-scrollbar-track { background: transparent; }
+  .content::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+  /* RECOMMENDATION HERO */
+  .reco-hero { background: linear-gradient(135deg, #1a1040 0%, #0f1626 60%, #1a2a1a 100%); border: 1px solid var(--border2); border-radius: 20px; padding: 28px; margin-bottom: 28px; display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; position: relative; overflow: hidden; }
+  .reco-hero::before { content: ''; position: absolute; top: -40px; right: -40px; width: 200px; height: 200px; background: radial-gradient(circle, rgba(108,110,255,0.15) 0%, transparent 70%); pointer-events: none; }
+  .reco-tag { display: inline-flex; align-items: center; gap: 6px; background: rgba(108,110,255,0.15); border: 1px solid rgba(108,110,255,0.3); border-radius: 20px; padding: 4px 12px; font-size: 11px; color: var(--accent); font-weight: 600; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .reco-brand { font-size: 13px; color: var(--muted); font-weight: 400; margin-bottom: 4px; }
+  .reco-model { font-family: var(--font-head); font-size: 22px; font-weight: 700; line-height: 1.2; margin-bottom: 12px; max-width: 420px; }
+  .reco-specs { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .spec-pill { background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 12px; color: var(--muted); }
+  .reco-price { font-family: var(--font-head); font-size: 26px; font-weight: 800; color: var(--gold); }
+  .reco-score { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .reco-score span { color: var(--green); font-weight: 600; }
+  .reco-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 9px 20px; font-family: var(--font-body); font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border2); border-radius: 8px; padding: 9px 20px; font-family: var(--font-body); font-size: 13px; cursor: pointer; transition: border-color 0.15s; }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* BRAND IMAGE */
+  .brand-img-wrap { width: 140px; height: 120px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 12px; flex-shrink: 0; }
+  .brand-logo-text { font-family: var(--font-head); font-size: 15px; font-weight: 800; color: rgba(255,255,255,0.4); letter-spacing: 1px; }
+
+  /* WHY SECTION */
+  .why-box { background: rgba(108,110,255,0.08); border: 1px solid rgba(108,110,255,0.2); border-radius: 12px; padding: 14px 18px; margin-top: 16px; }
+  .why-title { font-size: 11px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .why-text { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+  /* RESULTS GRID */
+  .results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .results-title { font-family: var(--font-head); font-size: 16px; font-weight: 700; }
+  .results-count { font-size: 13px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+
+  /* LAPTOP CARD */
+  .lcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--card-r); overflow: hidden; transition: border-color 0.2s, transform 0.2s; cursor: default; }
+  .lcard:hover { border-color: var(--border2); transform: translateY(-2px); }
+  .lcard-img { height: 100px; background: var(--surface2); display: flex; align-items: center; justify-content: center; border-bottom: 1px solid var(--border); }
+  .lcard-brand-logo { font-family: var(--font-head); font-size: 18px; font-weight: 800; color: rgba(255,255,255,0.25); letter-spacing: 2px; }
+  .lcard-body { padding: 14px; }
+  .lcard-brand { font-size: 11px; color: var(--muted); font-weight: 500; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .lcard-model { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.4; margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .lcard-specs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .lcard-spec { display: flex; justify-content: space-between; font-size: 12px; }
+  .lcard-spec-k { color: var(--muted); }
+  .lcard-spec-v { color: var(--text); font-weight: 500; }
+  .lcard-footer { display: flex; align-items: center; justify-content: space-between; padding-top: 10px; border-top: 1px solid var(--border); }
+  .lcard-price { font-family: var(--font-head); font-size: 15px; font-weight: 700; color: var(--gold); }
+  .lcard-score-badge { background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.25); border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 600; color: var(--green); }
+  .lcard-link { display: block; text-align: center; padding: 8px; margin: 0 14px 14px; background: transparent; border: 1px solid var(--border2); border-radius: 8px; font-size: 12px; color: var(--muted); text-decoration: none; transition: all 0.15s; }
+  .lcard-link:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* RANK BADGE */
+  .rank-1 .lcard-img { background: linear-gradient(135deg, rgba(108,110,255,0.15), rgba(167,139,250,0.1)); }
+
+  /* EMPTY STATE */
+  .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-text { font-size: 15px; }
+
+  /* UPLOAD ZONE */
+  .upload-zone { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; padding: 40px; text-align: center; }
+  .upload-box { border: 2px dashed var(--border2); border-radius: 20px; padding: 50px 40px; cursor: pointer; transition: border-color 0.2s; max-width: 480px; width: 100%; }
+  .upload-box:hover { border-color: var(--accent); }
+  .upload-icon { font-size: 48px; margin-bottom: 16px; }
+  .upload-title { font-family: var(--font-head); font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+  .upload-sub { font-size: 14px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+  .upload-hint { font-size: 12px; color: var(--muted); opacity: 0.6; }
+  input[type=file] { display: none; }
+
+  /* LOADING */
+  .spinner { width: 32px; height: 32px; border: 3px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* PAGINATION */
+  .pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 24px; }
+  .page-btn { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px; font-size: 13px; color: var(--muted); cursor: pointer; transition: all 0.15s; font-family: var(--font-body); }
+  .page-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .page-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* SCROLLBAR for main */
+  .sidebar-scroll::-webkit-scrollbar { width: 3px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+/* ─── CPU MAPPING ─── */
+function scoreCPU(cpuStr) {
+  if (!cpuStr) return 1;
+  const s = cpuStr.toLowerCase();
+  if (s.includes('m2 max') || s.includes('m2 ultra')) return 5;
+  if (s.includes('m2 pro')) return 4.5;
+  if (s.includes('m2')) return 4;
+  if (s.includes('m1 max') || s.includes('m1 ultra')) return 4.5;
+  if (s.includes('m1 pro')) return 4;
+  if (s.includes('m1')) return 3.5;
+  if (s.includes('i9')) return 4;
+  if (s.includes('i7')) return 3;
+  if (s.includes('i5')) return 2;
+  if (s.includes('i3')) return 1;
+  if (s.includes('ryzen 9')) return 4;
+  if (s.includes('ryzen 7')) return 3;
+  if (s.includes('ryzen 5')) return 2;
+  if (s.includes('ryzen 3')) return 1;
+  if (s.includes('celeron') || s.includes('pentium')) return 0.5;
+  return 1.5;
+}
+
+/* ─── DATA NORMALIZERS ─── */
+function parseRAM(ram) {
+  if (!ram) return 8;
+  const m = ram.match(/(\d+)\s*GB/i);
+  return m ? parseInt(m[1]) : 8;
+}
+
+function parseStorage(s) {
+  if (!s) return 256;
+  if (s.toLowerCase().includes('4 tb')) return 4000;
+  if (s.toLowerCase().includes('2 tb')) return 2000;
+  if (s.toLowerCase().includes('1 tb')) return 1000;
+  const m = s.match(/(\d+)\s*GB/i);
+  return m ? parseInt(m[1]) : 256;
+}
+
+function parseScreen(s) {
+  if (!s) return 15.6;
+  // Try to extract inch value
+  const inch = s.match(/(\d+\.?\d*)\s*inch/i) || s.match(/(\d+\.?\d*)\s*Inch/i);
+  if (inch) return parseFloat(inch[1]);
+  // Convert cm: "39.62 cm"
+  const cm = s.match(/([\d.]+)\s*cm/i);
+  if (cm) return Math.round((parseFloat(cm[1]) / 2.54) * 10) / 10;
+  return 15.6;
+}
+
+function parseOS(osStr) {
+  if (!osStr) return 'windows';
+  const s = osStr.toLowerCase();
+  if (s.includes('mac') || s.includes('macos')) return 'macos';
+  if (s.includes('freedos') || s.includes('linux') || s.includes('dos')) return 'freedos';
+  return 'windows';
+}
+
+function extractBrand(model) {
+  if (!model) return 'Other';
+  const first = model.split(' ')[0].trim();
+  const knownBrands = { ASUS: 'ASUS', HP: 'HP', DELL: 'Dell', Lenovo: 'Lenovo', MSI: 'MSI', Acer: 'Acer', APPLE: 'Apple', SAMSUNG: 'Samsung', ALIENWARE: 'Alienware', GIGABYTE: 'Gigabyte', MICROSOFT: 'Microsoft', LG: 'LG', Infinix: 'Infinix', Avita: 'Avita' };
+  return knownBrands[first] || first;
+}
+
+/* ─── NORMALIZE DATASET ─── */
+function normalizeDataset(raw) {
+  return raw
+    .filter(r => r['Fiyat_TL'] && r['Model'])
+    .map((r, i) => {
+      const price = parseInt(r['Fiyat_TL']) || 0;
+      const ram = parseRAM(r['RAM']);
+      const storage = parseStorage(r['Depolama']);
+      const screen = parseScreen(r['Ekran_Boyutu']);
+      const cpuScore = scoreCPU(r['Islemci']);
+      const osType = parseOS(r['Isletim_Sistemi']);
+      const brand = extractBrand(r['Model']);
+      return { id: i, model: r['Model'], brand, price, ram, storage, screen, cpuScore, osType, cpu: r['Islemci'], os: r['Isletim_Sistemi'], storage_raw: r['Depolama'], ram_raw: r['RAM'] };
+    })
+    .filter(r => r.price > 0);
+}
+
+/* ─── STEP 1: applyFilters — HARD CONSTRAINTS ONLY, runs before AHP ─── */
+function applyFilters(laptops, filters) {
+  return laptops.filter(l => {
+    // Price: hard range filter
+    if (l.price < filters.priceRange[0] || l.price > filters.priceRange[1]) return false;
+
+    // Search: model or brand substring match
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      if (!l.model.toLowerCase().includes(q) && !l.brand.toLowerCase().includes(q)) return false;
+    }
+
+    // RAM: exact GB match from checked set
+    if (filters.ram.length > 0 && !filters.ram.includes(l.ram)) return false;
+
+    // Storage: exact GB match (512, 1000, 2000, 4000)
+    if (filters.storage.length > 0 && !filters.storage.includes(l.storage)) return false;
+
+    // Screen size: rounded to 1 decimal, match within ±0.5" bucket
+    if (filters.screen.length > 0) {
+      const match = filters.screen.some(s => Math.abs(l.screen - s) <= 0.5);
+      if (!match) return false;
+    }
+
+    // CPU tier: keyword match against cpuTier string (e.g. "i7", "ryzen 5", "m2")
+    if (filters.cpu.length > 0) {
+      const cpuLow = l.cpu.toLowerCase();
+      const match = filters.cpu.some(c => cpuLow.includes(c.toLowerCase()));
+      if (!match) return false;
+    }
+
+    // OS: match canonical osType string
+    if (filters.os.length > 0 && !filters.os.includes(l.osType)) return false;
+
+    // Brand
+    if (filters.brand.length > 0 && !filters.brand.includes(l.brand)) return false;
+
+    return true;
+  });
+}
+
+/* ─── STEP 2: applyAHP — RANKING ONLY, runs on already-filtered data ─── */
+function applyAHP(laptops, weights) {
+  if (!laptops.length) return [];
+
+  // Compute min/max from the FILTERED set so normalization is relative to visible data
+  const maxPrice = Math.max(...laptops.map(l => l.price));
+  const minPrice = Math.min(...laptops.map(l => l.price));
+  const maxRAM    = Math.max(...laptops.map(l => l.ram));
+  const maxStorage= Math.max(...laptops.map(l => l.storage));
+  const maxScreen = Math.max(...laptops.map(l => l.screen));
+  const maxCPU    = Math.max(...laptops.map(l => l.cpuScore));
+
+  const priceRange = maxPrice - minPrice || 1;
+
+  // Normalize user weights → sum to 1
+  const total = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
+  const Wn = {
+    price:   weights.price   / total,
+    ram:     weights.ram     / total,
+    cpu:     weights.cpu     / total,
+    storage: weights.storage / total,
+    screen:  weights.screen  / total,
+    os:      weights.os      / total,
+  };
+
+  return laptops.map(l => {
+    // Cost criterion: lower price → higher normalized score
+    const pPrice   = (maxPrice - l.price) / priceRange;
+    // Benefit criteria: higher value → higher score
+    const pRAM     = maxRAM     > 0 ? l.ram       / maxRAM     : 0;
+    const pStorage = maxStorage > 0 ? l.storage    / maxStorage : 0;
+    const pScreen  = maxScreen  > 0 ? l.screen     / maxScreen  : 0;
+    const pCPU     = maxCPU     > 0 ? l.cpuScore   / maxCPU     : 0;
+    // OS: neutral 1.0 (filtering already removed unwanted OS — AHP doesn't re-penalize)
+    const pOS = 1.0;
+
+    const score =
+      Wn.price   * pPrice   +
+      Wn.ram     * pRAM     +
+      Wn.cpu     * pCPU     +
+      Wn.storage * pStorage +
+      Wn.screen  * pScreen  +
+      Wn.os      * pOS;
+
+    return {
+      ...l,
+      score:     Math.round(score * 1000) / 1000,
+      normPrice: Math.round(pPrice   * 100) / 100,
+      normRAM:   Math.round(pRAM     * 100) / 100,
+      normCPU:   Math.round(pCPU     * 100) / 100,
+    };
+  }).sort((a, b) => b.score - a.score);
+}
+
+/* ─── BRAND COLORS ─── */
+const BRAND_COLORS = {
+  Apple: '#636366', ASUS: '#00aaff', MSI: '#d00', HP: '#0096d6',
+  Dell: '#007db8', Lenovo: '#e2231a', Acer: '#83b81a', Samsung: '#1428a0',
+  Alienware: '#0ff', Gigabyte: '#eb6e0a', Microsoft: '#00a4ef', LG: '#a50034',
+};
+function brandColor(brand) { return BRAND_COLORS[brand] || '#8a90a0'; }
+
+const BRAND_LINKS = {
+  Apple: 'https://www.apple.com', ASUS: 'https://www.asus.com', MSI: 'https://www.msi.com',
+  HP: 'https://www.hp.com', Dell: 'https://www.dell.com', Lenovo: 'https://www.lenovo.com',
+  Acer: 'https://www.acer.com', Samsung: 'https://www.samsung.com/tr',
+  Alienware: 'https://www.alienware.com', Gigabyte: 'https://www.gigabyte.com',
+  Microsoft: 'https://www.microsoft.com', LG: 'https://www.lg.com',
+};
+
+/* ─── BRAND LOGO ─── */
+function BrandLogo({ brand, size = 'md' }) {
+  const color = brandColor(brand);
+  const fs = size === 'lg' ? 20 : 15;
+  return React.createElement('div', {
+    style: { fontFamily: "'Syne', sans-serif", fontSize: fs, fontWeight: 800, color: color, letterSpacing: 1, opacity: 0.9 }
+  }, brand.toUpperCase());
+}
+
+/* ─── FORMAT HELPERS ─── */
+function fmtPrice(p) { return '₺' + p.toLocaleString('tr-TR'); }
+function fmtStorage(s) { return s >= 1000 ? (s / 1000) + ' TB' : s + ' GB'; }
+
+/* ─── GENERATE WHY TEXT ─── */
+function generateWhy(laptop, Wn) {
+  const sorted = Object.entries(Wn).sort((a, b) => b[1] - a[1]);
+  const labelMap = { price: 'fiyat', ram: 'RAM', cpu: 'işlemci', storage: 'depolama', screen: 'ekran boyutu', os: 'işletim sistemi' };
+  const top2 = sorted.slice(0, 2).map(([k]) => labelMap[k]);
+  const priceStr = laptop.price < 50000 ? 'uygun fiyatlı' : laptop.price > 150000 ? 'üst segmentte' : 'orta fiyat aralığında';
+  return `Bu laptop, ${top2.join(' ve ')} kriterlerine verdiğiniz yüksek önem nedeniyle önerildi. ${fmtPrice(laptop.price)} ile ${priceStr} konumlanıyor. AHP skoru ${(laptop.score * 100).toFixed(1)} üzerinden değerlendirilmiştir.`;
+}
+
+/* ─── AHP SLIDERS ─── */
+function AHPSliders({ weights, onChange }) {
+  const criteria = [
+    { key: 'price', label: 'Fiyat Önemi', icon: '₺' },
+    { key: 'ram', label: 'RAM Önemi', icon: 'R' },
+    { key: 'cpu', label: 'İşlemci Önemi', icon: 'C' },
+    { key: 'storage', label: 'Depolama Önemi', icon: 'D' },
+    { key: 'screen', label: 'Ekran Önemi', icon: 'E' },
+    { key: 'os', label: 'OS Önemi', icon: 'O' },
+  ];
+  const total = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
+
+  return React.createElement('div', { className: 'ahp-panel' },
+    React.createElement('div', { className: 'ahp-title' },
+      React.createElement('span', { style: { fontSize: 14 } }, '⚡'),
+      'AHP Ağırlıkları'
+    ),
+    criteria.map(c =>
+      React.createElement('div', { key: c.key, className: 'ahp-row' },
+        React.createElement('div', { className: 'ahp-row-header' },
+          React.createElement('span', { className: 'ahp-row-name' }, c.label),
+          React.createElement('span', { className: 'ahp-row-val' }, weights[c.key])
+        ),
+        React.createElement('input', {
+          type: 'range', min: 1, max: 5, step: 1, value: weights[c.key],
+          className: 'ahp-slider',
+          onChange: e => onChange(c.key, parseInt(e.target.value))
+        }),
+        React.createElement('div', { className: 'ahp-weight' }, 'Ağırlık: ' + (weights[c.key] / total * 100).toFixed(0) + '%')
+      )
+    )
+  );
+}
+
+/* ─── LAPTOP CARD ─── */
+function LaptopCard({ laptop, rank }) {
+  const link = BRAND_LINKS[laptop.brand] || '#';
+  const color = brandColor(laptop.brand);
+  return React.createElement('div', { className: 'lcard' + (rank === 1 ? ' rank-1' : '') },
+    React.createElement('div', { className: 'lcard-img' },
+      React.createElement('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 } },
+        rank <= 3 && React.createElement('div', { style: { fontSize: 11, fontWeight: 700, color: rank === 1 ? '#f5c542' : rank === 2 ? '#a0a0a0' : '#c07a4e', letterSpacing: 0.5 } }, '#' + rank),
+        React.createElement('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 800, color, letterSpacing: 2, opacity: 0.85 } }, laptop.brand.toUpperCase())
+      )
+    ),
+    React.createElement('div', { className: 'lcard-body' },
+      React.createElement('div', { className: 'lcard-brand' }, laptop.brand),
+      React.createElement('div', { className: 'lcard-model' }, laptop.model),
+      React.createElement('div', { className: 'lcard-specs' },
+        React.createElement('div', { className: 'lcard-spec' },
+          React.createElement('span', { className: 'lcard-spec-k' }, 'RAM'),
+          React.createElement('span', { className: 'lcard-spec-v' }, laptop.ram + ' GB')
+        ),
+        React.createElement('div', { className: 'lcard-spec' },
+          React.createElement('span', { className: 'lcard-spec-k' }, 'Depolama'),
+          React.createElement('span', { className: 'lcard-spec-v' }, fmtStorage(laptop.storage))
+        ),
+        React.createElement('div', { className: 'lcard-spec' },
+          React.createElement('span', { className: 'lcard-spec-k' }, 'Ekran'),
+          React.createElement('span', { className: 'lcard-spec-v' }, laptop.screen + '"')
+        ),
+      ),
+      React.createElement('div', { className: 'lcard-footer' },
+        React.createElement('div', { className: 'lcard-price' }, fmtPrice(laptop.price)),
+        React.createElement('div', { className: 'lcard-score-badge' }, 'Skor: ' + (laptop.score * 100).toFixed(1))
+      )
+    ),
+    React.createElement('a', { href: link, target: '_blank', rel: 'noopener', className: 'lcard-link' }, 'Siteye Git →')
+  );
+}
+
+/* ─── RECOMMENDATION HERO ─── */
+function RecommendationHero({ laptop, weights }) {
+  if (!laptop) return null;
+  const link = BRAND_LINKS[laptop.brand] || '#';
+  const color = brandColor(laptop.brand);
+  const total = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
+  const Wn = {};
+  Object.keys(weights).forEach(k => Wn[k] = weights[k] / total);
+  const why = generateWhy(laptop, Wn);
+
+  return React.createElement('div', { className: 'reco-hero' },
+    React.createElement('div', null,
+      React.createElement('div', { className: 'reco-tag' }, '⚡ YAPAY ZEKA ÖNERİSİ'),
+      React.createElement('div', { className: 'reco-brand' }, laptop.brand),
+      React.createElement('div', { className: 'reco-model' }, laptop.model),
+      React.createElement('div', { className: 'reco-specs' },
+        React.createElement('span', { className: 'spec-pill' }, laptop.ram + ' GB RAM'),
+        React.createElement('span', { className: 'spec-pill' }, fmtStorage(laptop.storage) + ' SSD'),
+        React.createElement('span', { className: 'spec-pill' }, laptop.screen + '" Ekran'),
+        React.createElement('span', { className: 'spec-pill' }, laptop.osType === 'macos' ? 'macOS' : laptop.osType === 'windows' ? 'Windows 11' : 'FreeDOS'),
+      ),
+      React.createElement('div', { className: 'reco-price' }, fmtPrice(laptop.price)),
+      React.createElement('div', { className: 'reco-score' }, 'AHP Skoru: ', React.createElement('span', null, (laptop.score * 100).toFixed(1) + ' / 100')),
+      React.createElement('div', { className: 'reco-actions' },
+        React.createElement('a', { href: link, target: '_blank', rel: 'noopener', style: { textDecoration: 'none' } },
+          React.createElement('button', { className: 'btn-primary' }, 'Siteye Git')
+        ),
+      ),
+      React.createElement('div', { className: 'why-box' },
+        React.createElement('div', { className: 'why-title' }, '⚙ Neden Bu Öneri?'),
+        React.createElement('div', { className: 'why-text' }, why)
+      )
+    ),
+    React.createElement('div', { className: 'brand-img-wrap' },
+      React.createElement('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 900, color, letterSpacing: 2, opacity: 0.9 } }, laptop.brand.toUpperCase())
+    )
+  );
+}
+
+/* ─── SIDEBAR ─── */
+function Sidebar({ filters, onFilters, weights, onWeights, brands, activeCount }) {
+  // All filter option definitions — canonical values match what normalizeDataset produces
+  const RAM_OPTS    = [8, 16, 32, 64];
+  const STORAGE_OPTS= [256, 512, 1000, 2000, 4000];
+  const SCREEN_OPTS = [13, 14, 15.6, 16, 17.3];
+  // CPU keyword tiers — matched via cpuLow.includes(keyword)
+  const CPU_OPTS = [
+    { label: 'Core i3', kw: 'core i3' },
+    { label: 'Core i5', kw: 'core i5' },
+    { label: 'Core i7', kw: 'core i7' },
+    { label: 'Core i9', kw: 'core i9' },
+    { label: 'Ryzen 5', kw: 'ryzen 5' },
+    { label: 'Ryzen 7', kw: 'ryzen 7' },
+    { label: 'Ryzen 9', kw: 'ryzen 9' },
+    { label: 'Apple M1', kw: 'apple m1' },
+    { label: 'Apple M2', kw: 'apple m2' },
+  ];
+  // OS options — values match l.osType from normalizeDataset
+  const OS_OPTS = [
+    { label: 'Windows', val: 'windows' },
+    { label: 'macOS',   val: 'macos'   },
+    { label: 'FreeDOS', val: 'freedos' },
+  ];
+
+  const PRICE_MIN = 10000;
+  const PRICE_MAX = 252000;
+  const pct = ((filters.priceRange[1] - PRICE_MIN) / (PRICE_MAX - PRICE_MIN) * 100).toFixed(1);
+
+  // Generic multi-select toggle helper
+  function toggle(arr, val) { return arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val]; }
+
+  // Reset all filters
+  function resetAll() {
+    onFilters({
+      search: '', priceRange: [0, PRICE_MAX],
+      ram: [], storage: [], screen: [], cpu: [], os: [], brand: []
+    });
+  }
+
+  const hasActiveFilters = filters.search || filters.priceRange[1] < PRICE_MAX ||
+    filters.ram.length || filters.storage.length || filters.screen.length ||
+    filters.cpu.length || filters.os.length || filters.brand.length;
+
+  return React.createElement('div', { className: 'sidebar' },
+    // Header
+    React.createElement('div', { style: { padding: '18px 18px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 } },
+      React.createElement('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 800, letterSpacing: -0.5 } },
+        'Lap', React.createElement('span', { style: { color: 'var(--accent)' } }, 'top'), React.createElement('span', { style: { color: 'var(--accent2)' } }, 'AI')
+      ),
+      React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 } },
+        React.createElement('div', { style: { fontSize: 11, color: 'var(--muted)' } }, 'AHP Tabanlı Öneri Sistemi'),
+        hasActiveFilters && React.createElement('button', {
+          onClick: resetAll,
+          style: { fontSize: 11, color: 'var(--red)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)' }
+        }, 'Temizle ×')
+      )
+    ),
+    // Scrollable filter area
+    React.createElement('div', { className: 'sidebar-scroll' },
+
+      // Search
+      React.createElement('div', { className: 'sidebar-section' },
+        React.createElement('div', { className: 'sidebar-label' }, 'Arama'),
+        React.createElement('div', { className: 'search-wrap' },
+          React.createElement('span', { className: 'search-icon' }, '🔍'),
+          React.createElement('input', {
+            type: 'text', placeholder: 'Model veya Marka...', className: 'search-input',
+            value: filters.search,
+            onChange: e => onFilters({ search: e.target.value })
+          })
+        )
+      ),
+
+      // Price range slider
+      React.createElement('div', { className: 'sidebar-section', style: { marginTop: 14 } },
+        React.createElement('div', { className: 'sidebar-label' }, 'Max Fiyat'),
+        React.createElement('div', { className: 'price-range' },
+          React.createElement('input', {
+            type: 'range', min: PRICE_MIN, max: PRICE_MAX, step: 1000,
+            value: filters.priceRange[1],
+            style: { '--pct': pct + '%' },
+            onChange: e => onFilters({ priceRange: [0, parseInt(e.target.value)] })
+          }),
+          React.createElement('span', { className: 'price-val' }, fmtPrice(filters.priceRange[1]))
+        ),
+        React.createElement('div', { style: { fontSize: 11, color: 'var(--muted)', marginTop: 3 } }, '₺10.000 – ₺251.995')
+      ),
+
+      // RAM — exact GB match
+      React.createElement('div', { className: 'sidebar-section', style: { marginTop: 14 } },
+        React.createElement('div', { className: 'sidebar-label' }, 'RAM Kapasitesi'),
+        React.createElement('div', { className: 'chips' },
+          RAM_OPTS.map(r =>
+            React.createElement('button', {
+              key: r,
+              className: 'chip' + (filters.ram.includes(r) ? ' active' : ''),
+              onClick: () => onFilters({ ram: toggle(filters.ram, r) })
+            }, r + ' GB')
+          )
+        )
+      ),
+
+      // Storage — exact GB match (1 TB = 1000 GB canonical)
+      React.createElement('div', { className: 'sidebar-section', style: { marginTop: 14 } },
+        React.createElement('div', { className: 'sidebar-label' }, 'Depolama'),
+        React.createElement('div', { className: 'chips' },
+          STORAGE_OPTS.map(s =>
+            React.createElement('button', {
+              key: s,
+              className: 'chip' + (filters.storage.includes(s) ? ' active' : ''),
+              onClick: () => onFilters({ storage: toggle(filters.storage, s) })
+            }, fmtStorage(s))
+          )
+        )
+      ),
+
+      // Screen size — ±0.5" tolerance bucket
+      React.createElement('div', { className: 'sidebar-section', style: { marginTop: 14 } },
+        React.createElement('div', { className: 'sidebar-label' }, 'Ekran Boyutu'),
+        React.createElement('div', { className: 'chips' },
+          SCREEN_OPTS.map(s =>
+            React.createElement('button', {
+              key: s,
+              className: 'chip' + (filters.screen.includes(s) ? ' active' : ''),
+              onClick: () => onFilters({ screen: toggle(filters.screen, s) })
+            }, s + '"')
+          )
+        )
+      ),
+
+      // CPU tier — keyword-based, multi-select
+      React.createElement('div', { className: 'sidebar-section', style: { marginTop: 14 } },
+        React.createElement('div', { className: 'sidebar-label' }, 'İşlemci'),
+        React.createElement('div', { className: 'chips' },
+          CPU_OPTS.map(c =>
+            React.createElement('button', {
+              key: c.kw,
+              className: 'chip' + (filters.cpu.includes(c.kw) ? ' active' : ''),
+              onClick: () => onFilters({ cpu: toggle(filters.cpu, c.kw) })
+            }, c.label)
+          )
+        )
+      ),
+
+      // OS — multi-select, matches l.osType
+      React.createElement('div', { className: 'sidebar-section', style: { marginTop: 14 } },
+        React.createElement('div', { className: 'sidebar-label' }, 'İşletim Sistemi'),
+        React.createElement('div', { className: 'chips' },
+          OS_OPTS.map(o =>
+            React.createElement('button', {
+              key: o.val,
+              className: 'chip' + (filters.os.includes(o.val) ? ' active' : ''),
+              onClick: () => onFilters({ os: toggle(filters.os, o.val) })
+            }, o.label)
+          )
+        )
+      ),
+
+      // Brand — dynamic from dataset
+      React.createElement('div', { className: 'sidebar-section', style: { marginTop: 14, marginBottom: 8 } },
+        React.createElement('div', { className: 'sidebar-label' }, 'Marka'),
+        React.createElement('div', { className: 'chips' },
+          brands.slice(0, 10).map(b =>
+            React.createElement('button', {
+              key: b,
+              className: 'chip' + (filters.brand.includes(b) ? ' active' : ''),
+              onClick: () => onFilters({ brand: toggle(filters.brand, b) })
+            }, b)
+          )
+        )
+      )
+    ),
+    React.createElement(AHPSliders, { weights, onChange: (k, v) => onWeights({ ...weights, [k]: v }) })
+  );
+}
+
+/* ─── UPLOAD SCREEN ─── */
+function UploadScreen({ onLoad }) {
+  const [loading, setLoading] = useState(false);
+  const fileRef = useRef();
+
+  function handleFile(file) {
+    if (!file) return;
+    setLoading(true);
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      encoding: 'UTF-8',
+      complete: (result) => {
+        const data = normalizeDataset(result.data);
+        setLoading(false);
+        onLoad(data);
+      },
+      error: () => setLoading(false)
+    });
+  }
+
+  function handleDrop(e) { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }
+
+  return React.createElement('div', { className: 'upload-zone' },
+    React.createElement('div', { className: 'upload-box', onDrop: handleDrop, onDragOver: e => e.preventDefault(), onClick: () => fileRef.current.click() },
+      loading
+        ? React.createElement('div', null,
+            React.createElement('div', { className: 'spinner' }),
+            React.createElement('div', { style: { fontSize: 14, color: 'var(--muted)' } }, 'Veriler işleniyor...')
+          )
+        : React.createElement('div', null,
+            React.createElement('div', { className: 'upload-icon' }, '💻'),
+            React.createElement('div', { className: 'upload-title' }, 'CSV Dosyasını Yükle'),
+            React.createElement('div', { className: 'upload-sub' }, 'laptop_data_temiz.csv dosyanı buraya sürükle veya tıklayarak seç. Sistem AHP algoritmasıyla en uygun laptopu hesaplar.'),
+            React.createElement('div', { className: 'upload-hint' }, 'Model, Fiyat_TL, RAM, Islemci, Isletim_Sistemi, Depolama, Ekran_Boyutu')
+          ),
+      React.createElement('input', { type: 'file', accept: '.csv', ref: fileRef, onChange: e => handleFile(e.target.files[0]) })
+    )
+  );
+}
+
+/* ─── MAIN APP ─── */
+function App() {
+  const [laptops, setLaptops] = useState(null); // normalized dataset (raw parsed)
+  const [weights, setWeights] = useState({ price: 3, ram: 3, cpu: 3, storage: 2, screen: 2, os: 1 });
+
+  // Correct filter state — all arrays for multi-select, priceRange as [min, max]
+  const [filters, setFilters] = useState({
+    search:     '',
+    priceRange: [0, 252000],
+    ram:        [],   // number[] e.g. [16, 32]
+    storage:    [],   // number[] canonical GB e.g. [512, 1000]
+    screen:     [],   // number[] e.g. [15.6]
+    cpu:        [],   // string[] keyword e.g. ['core i7', 'ryzen 9']
+    os:         [],   // string[] osType e.g. ['windows', 'macos']
+    brand:      [],   // string[] e.g. ['ASUS', 'HP']
+  });
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 12;
+
+  // Merge-patch filters and reset to page 1
+  function patchFilters(patch) {
+    setFilters(f => ({ ...f, ...patch }));
+    setPage(1);
+  }
+
+  // Brand list from raw data, sorted by frequency
+  const brands = useMemo(() => {
+    if (!laptops) return [];
+    const cnt = {};
+    laptops.forEach(l => cnt[l.brand] = (cnt[l.brand] || 0) + 1);
+    return Object.entries(cnt).sort((a, b) => b[1] - a[1]).map(([b]) => b);
+  }, [laptops]);
+
+  /*
+   * CORRECT PIPELINE:
+   *   normalizeDataset (on load) → applyFilters → applyAHP → sorted results
+   *
+   * applyFilters runs FIRST as hard constraints (eleme).
+   * applyAHP runs SECOND on the already-filtered subset (sıralama).
+   * AHP never overrides or circumvents the filter.
+   */
+  const results = useMemo(() => {
+    if (!laptops) return [];
+    const afterFilter = applyFilters(laptops, filters);   // Step 1: hard constraints
+    const afterAHP    = applyAHP(afterFilter, weights);   // Step 2: ranking only
+    return afterAHP;                                      // already sorted desc by score
+  }, [laptops, filters, weights]);
+
+  const topPick  = results[0];
+  const rest     = results.slice(1);
+  const pageCount= Math.ceil(rest.length / PER_PAGE);
+  const paged    = rest.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+
+  if (!laptops) {
+    return React.createElement('div', { style: { display: 'flex', flexDirection: 'column', height: '100vh' } },
+      React.createElement('div', { style: { padding: '18px 28px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 } },
+        React.createElement('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 800, letterSpacing: -0.5 } },
+          'Lap', React.createElement('span', { style: { color: 'var(--accent)' } }, 'top'), React.createElement('span', { style: { color: 'var(--accent2)' } }, 'AI')
+        ),
+        React.createElement('span', { style: { fontSize: 12, color: 'var(--muted)' } }, '— AHP Tabanlı Laptop Öneri Sistemi')
+      ),
+      React.createElement(UploadScreen, { onLoad: setLaptops })
+    );
+  }
+
+  return React.createElement('div', { className: 'app' },
+    React.createElement(Sidebar, { filters, onFilters: patchFilters, weights, onWeights: setWeights, brands }),
+    React.createElement('div', { className: 'main' },
+      React.createElement('div', { className: 'topbar' },
+        React.createElement('div', null,
+          React.createElement('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 16, fontWeight: 700 } }, 'Katalog'),
+          React.createElement('div', { style: { fontSize: 12, color: 'var(--muted)' } }, 'AHP algoritması ile kişisel tercihlerinize göre sıralandı')
+        ),
+        React.createElement('div', { style: { display: 'flex', gap: 10, alignItems: 'center' } },
+          React.createElement('span', { className: 'badge-count' }, results.length.toLocaleString('tr-TR') + ' sonuç'),
+          React.createElement('button', { className: 'btn-secondary', style: { fontSize: 12, padding: '6px 14px' }, onClick: () => setLaptops(null) }, '↑ Yeni CSV')
+        )
+      ),
+      React.createElement('div', { className: 'content' },
+        topPick
+          ? React.createElement(RecommendationHero, { laptop: topPick, weights })
+          : React.createElement('div', { className: 'empty' },
+              React.createElement('div', { className: 'empty-icon' }, '🔍'),
+              React.createElement('div', { className: 'empty-text' }, 'Kriterlere uygun laptop bulunamadı. Filtreleri gevşetin.')
+            ),
+        paged.length > 0 && React.createElement('div', null,
+          React.createElement('div', { className: 'results-header' },
+            React.createElement('div', { className: 'results-title' }, 'Tüm Sonuçlar'),
+            React.createElement('div', { className: 'results-count' },
+              (page - 1) * PER_PAGE + 1 + '–' + Math.min(page * PER_PAGE, rest.length) + ' / ' + rest.length
+            )
+          ),
+          React.createElement('div', { className: 'grid' },
+            paged.map((l, i) => React.createElement(LaptopCard, { key: l.id, laptop: l, rank: i + 2 + (page - 1) * PER_PAGE }))
+          ),
+          pageCount > 1 && React.createElement('div', { className: 'pagination' },
+            React.createElement('button', { className: 'page-btn', disabled: page === 1, onClick: () => setPage(p => p - 1) }, '← Önceki'),
+            ...[...Array(Math.min(pageCount, 7))].map((_, i) => {
+              const p = i + 1;
+              return React.createElement('button', { key: p, className: 'page-btn' + (page === p ? ' active' : ''), onClick: () => setPage(p) }, p);
+            }),
+            React.createElement('button', { className: 'page-btn', disabled: page === pageCount, onClick: () => setPage(p => p + 1) }, 'Sonraki →')
+          )
+        )
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+</body>
+</html>
